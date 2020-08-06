@@ -1,14 +1,208 @@
+connection = new WebSocket('wss://181084299f6d.ngrok.io/ws'); 
+
 // get DOM elements
-var dataChannelLog = document.getElementById('data-channel'),
-    iceConnectionLog = document.getElementById('ice-connection-state'),
-    iceGatheringLog = document.getElementById('ice-gathering-state'),
-    signalingLog = document.getElementById('signaling-state');
+var dataChannelLog = document.getElementById('data-channel');
 
-// peer connection
-var pc = null;
+var thisUser= "";
 
-// data channel
-var dc = null, dcInterval = null;
+var otherUser, myConnection;
+
+var dataChannel = null;
+
+function login() {
+    thisUser = document.getElementById('username').value
+    message = { 
+        type: "login", 
+        username: thisUser
+    }
+    connection.send(JSON.stringify(message)); 
+}
+
+function connectToUser() {
+    targetUser = document.getElementById('otheruser').value
+    otherUser = targetUser
+    openDataChannel();
+
+    myConnection.createOffer(function (offer) { 
+        console.log("Sending offer..."); 
+        message = { 
+           type: "offer",
+           offer: offer,
+           username: thisUser,
+           target: otherUser
+        }
+        connection.send(JSON.stringify(message))
+           
+        return myConnection.setLocalDescription(offer); 
+     }, function (error) { 
+        alert("An error has occurred."); 
+     })
+
+
+}
+
+function onOffer(offer, thisUser, otherUser1) { 
+    console.log(otherUser1)
+    otherUser = otherUser1;
+    console.log("Received offer!")
+    console.log(otherUser)
+    myConnection.ondatachannel = receiveChannelCallback;
+    myConnection.setRemoteDescription(new RTCSessionDescription(offer)).then(function() {
+        
+        return myConnection.createAnswer(function (answer) { 
+            myConnection.setLocalDescription(answer).then(function() {
+                message = { 
+                    type: "answer", 
+                    answer: answer,
+                    username: thisUser,
+                    target: otherUser
+                 };
+                 console.log(myConnection)
+                 connection.send(JSON.stringify(message))
+                 return
+            })
+     
+              
+         }, function (error) { 
+            alert("oops...error"); 
+         }); 
+    }).then(function() {
+        document.getElementById("message").disabled = false;
+        document.getElementById("login").disabled = true;
+        document.getElementById("connect").disabled = true;
+        document.getElementById("status").innerHTML = "Connected!";
+    });
+ }
+   
+ //when another user answers to our offer 
+ function onAnswer(answer) { 
+    console.log("Received answer!")
+    console.log(otherUser)
+    myConnection.setRemoteDescription(new RTCSessionDescription(answer)).then(function() {
+        console.log(myConnection);
+        document.getElementById("message").disabled = false;
+        document.getElementById("login").disabled = true;
+        document.getElementById("connect").disabled = true;
+        document.getElementById("status").innerHTML = "Connected!";
+
+        return
+    })
+ } 
+  
+ //when we got ice candidate from another user 
+ function onCandidate(candidate) { 
+    myConnection.addIceCandidate(new RTCIceCandidate(candidate)); 
+ }	
+
+connection.onmessage = function (message) { 
+    console.log("Got message", message.data);
+    var data = JSON.parse(message.data); 
+     
+    switch(data.type) { 
+       case "login": 
+          onLogin(data.success); 
+          break; 
+       case "offer": 
+          onOffer(data.offer, data.target, data.username); 
+          break; 
+       case "answer": 
+          onAnswer(data.answer); 
+          break; 
+       case "candidate": 
+          onCandidate(data.candidate); 
+          break; 
+       default: 
+          break; 
+    } 
+ };
+
+ function onLogin(success) { 
+
+    if (success === false) { 
+       alert("oops...try a different username"); 
+    } else { 
+       //creating our RTCPeerConnection object 
+    
+       navigator.mediaDevices.getUserMedia({ video: false, audio: true }).then(function (stream) { 			
+        //displaying local audio stream on the page
+       
+        var configuration = { 
+          "iceServers": [{ "url": "stun:stun.1.google.com:19302" }, { "url": "turn:54.87.216.178:3478", "username": 'matt', 'credential': 'pass'}] 
+        }; 
+            
+        myConnection = new RTCPeerConnection(configuration); 
+        console.log("RTCPeerConnection object was created"); 
+        console.log(myConnection); 
+    
+        myConnection.addStream(stream); 
+                
+        //when a remote user adds stream to the peer connection, we display it 
+        myConnection.onaddstream = function (e) { 
+            remoteAudio.srcObject = e.stream; 
+        }; 
+        //setup ice handling
+        //when the browser finds an ice candidate we send it to another peer 
+        myConnection.onicecandidate = function (event) { 
+            
+            if (event.candidate) { 
+                console.log(thisUser, otherUser)
+                message = { 
+                    type: "candidate", 
+                    candidate: event.candidate,
+                    username: thisUser,
+                    target: otherUser
+                }
+                connection.send(JSON.stringify(message))
+
+            }
+        };
+        document.getElementById("connect").disabled = false;
+        document.getElementById("login").disabled = true;
+        document.getElementById("status").innerHTML = "Logged in!";
+    }, function (error) { 
+        console.log(error); 
+     })
+    } 
+ };
+
+ function sendMessage() {
+    msg = document.getElementById('msgInput').value
+    console.log("send message: ", msg);
+    dataChannelLog.textContent += thisUser + ' > ' + msg + '\n';
+    dataChannel.send(msg); 
+ }
+
+ function openDataChannel() { 
+
+    var dataChannelOptions = { 
+       reliable:true 
+    }; 
+    
+    dataChannel = myConnection.createDataChannel("myDataChannel");
+     
+    dataChannel.onclose = function() {
+        dataChannelLog.textContent += '- close\n';
+    };
+    dataChannel.onopen = function() {
+        dataChannelLog.textContent += '- open\n';
+    };
+    dataChannel.onmessage = function(evt) {
+        dataChannelLog.textContent += otherUser + ' < ' + evt.data + '\n';
+    };
+ }
+
+ function receiveChannelCallback(event) {
+    dataChannel = event.channel;
+    dataChannel.onclose = function() {
+        dataChannelLog.textContent += '- close\n';
+    };
+    dataChannel.onopen = function() {
+        dataChannelLog.textContent += '- open\n';
+    };
+    dataChannel.onmessage = function(evt) {
+        dataChannelLog.textContent += otherUser + ' < ' + evt.data + '\n';
+    };
+  }
 
 function createPeerConnection() {
     var config = {
@@ -68,18 +262,7 @@ function negotiate() {
         });
     }).then(function() {
         var offer = pc.localDescription;
-        var codec;
-
-        codec = document.getElementById('audio-codec').value;
-        if (codec !== 'default') {
-            offer.sdp = sdpFilterCodec('audio', codec, offer.sdp);
-        }
-
-        codec = document.getElementById('video-codec').value;
-        if (codec !== 'default') {
-            offer.sdp = sdpFilterCodec('video', codec, offer.sdp);
-        }
-
+      
         document.getElementById('offer-sdp').textContent = offer.sdp;
         return fetch('/offer', {
             body: JSON.stringify({
@@ -207,65 +390,4 @@ function stop() {
     setTimeout(function() {
         pc.close();
     }, 500);
-}
-
-function sdpFilterCodec(kind, codec, realSdp) {
-    var allowed = []
-    var rtxRegex = new RegExp('a=fmtp:(\\d+) apt=(\\d+)\r$');
-    var codecRegex = new RegExp('a=rtpmap:([0-9]+) ' + escapeRegExp(codec))
-    var videoRegex = new RegExp('(m=' + kind + ' .*?)( ([0-9]+))*\\s*$')
-    
-    var lines = realSdp.split('\n');
-
-    var isKind = false;
-    for (var i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith('m=' + kind + ' ')) {
-            isKind = true;
-        } else if (lines[i].startsWith('m=')) {
-            isKind = false;
-        }
-
-        if (isKind) {
-            var match = lines[i].match(codecRegex);
-            if (match) {
-                allowed.push(parseInt(match[1]));
-            }
-
-            match = lines[i].match(rtxRegex);
-            if (match && allowed.includes(parseInt(match[2]))) {
-                allowed.push(parseInt(match[1]));
-            }
-        }
-    }
-
-    var skipRegex = 'a=(fmtp|rtcp-fb|rtpmap):([0-9]+)';
-    var sdp = '';
-
-    isKind = false;
-    for (var i = 0; i < lines.length; i++) {
-        if (lines[i].startsWith('m=' + kind + ' ')) {
-            isKind = true;
-        } else if (lines[i].startsWith('m=')) {
-            isKind = false;
-        }
-
-        if (isKind) {
-            var skipMatch = lines[i].match(skipRegex);
-            if (skipMatch && !allowed.includes(parseInt(skipMatch[2]))) {
-                continue;
-            } else if (lines[i].match(videoRegex)) {
-                sdp += lines[i].replace(videoRegex, '$1 ' + allowed.join(' ')) + '\n';
-            } else {
-                sdp += lines[i] + '\n';
-            }
-        } else {
-            sdp += lines[i] + '\n';
-        }
-    }
-
-    return sdp;
-}
-
-function escapeRegExp(string) {
-    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the whole matched string
 }

@@ -7,6 +7,7 @@ import ssl
 import uuid
 
 import cv2
+import aiohttp
 from aiohttp import web
 from av import VideoFrame
 
@@ -17,6 +18,8 @@ ROOT = os.path.dirname(__file__)
 
 logger = logging.getLogger("pc")
 pcs = set()
+
+sessions = {}
 
 
 class VideoTransformTrack(MediaStreamTrack):
@@ -98,6 +101,48 @@ async def javascript(request):
     content = open(os.path.join(ROOT, "client.js"), "r").read()
     return web.Response(content_type="application/javascript", text=content)
 
+async def websocket_handler(request):
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+
+    async for msg in ws:
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            if msg.data == 'close':
+                await ws.close()
+            else:
+                data = eval(msg.data)
+                if data['type'] == "login":
+                    username = data['username']
+                    sessions[username] = ws
+                    print(sessions)
+
+                    response = {}
+                    response['type'] = 'login'
+                    response['success'] = True
+                    await ws.send_str(json.dumps(response))
+
+                if data['type'] == "offer":
+                    print(data)
+                    targetSession = sessions[data['target']]
+                    await targetSession.send_str(json.dumps(data))
+
+                if data['type'] == "answer":
+                    print(data)
+                    targetSession = sessions[data['target']]
+                    await targetSession.send_str(json.dumps(data))
+
+                if data['type'] == "candidate":
+                    print(data)
+                    targetSession = sessions[data['target']]
+                    await targetSession.send_str(json.dumps(data))
+
+
+
+        elif msg.type == aiohttp.WSMsgType.ERROR:
+            print('ws connection closed with exception %s' %
+                ws.exception())
+
+    print('websocket connection closed')
 
 async def offer(request):
     params = await request.json()
@@ -207,6 +252,7 @@ if __name__ == "__main__":
     app.router.add_get("/", index)
     app.router.add_get("/client.js", javascript)
     app.router.add_post("/offer", offer)
+    app.router.add_route('GET', '/ws', websocket_handler)
     web.run_app(
         app, access_log=None, host=args.host, port=args.port, ssl_context=ssl_context
     )

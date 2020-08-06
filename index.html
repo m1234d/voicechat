@@ -70,42 +70,24 @@
         <option value="H264/90000">H264</option>
     </select>
 </div>
-<div class="option">
-    <input id="use-stun" type="checkbox"/>
-    <label for="use-stun">Use STUN server</label>
-</div>
+<label>Status: </label><label id="status"></label><br>
+<label>Username: </label><input type="text" id="username" name="username">&nbsp;<button id="login" onclick="login()">Login</button><br>
+<label>Connect To: </label><input type="text" id="otheruser" name="otheruser">&nbsp;<button id="connect" onclick="connectToUser()" disabled=true>Connect</button><br>
+<Label>Send Message: </Label><input type="text" id="msgInput" name="msgInput">&nbsp;<button id="message" onclick="sendMessage()" disabled=true>Send</button>
 
-<button id="start" onclick="start()">Start</button>
 <button id="stop" style="display: none" onclick="stop()">Stop</button>
 
-<h2>State</h2>
-<p>
-    ICE gathering state: <span id="ice-gathering-state"></span>
-</p>
-<p>
-    ICE connection state: <span id="ice-connection-state"></span>
-</p>
-<p>
-    Signaling state: <span id="signaling-state"></span>
-</p>
 
-<div id="media" style="display: none">
+<div id="media">
     <h2>Media</h2>
 
-    <audio id="audio" autoplay="true"></audio>
-    <video id="video" autoplay="true" playsinline="true"></video>
+    Remote audio: <audio id = "remoteAudio" 
+               controls autoplay></audio> 
+    <!--<video id="video" autoplay="true" playsinline="true"></video> -->
 </div>
 
 <h2>Data channel</h2>
 <pre id="data-channel" style="height: 200px;"></pre>
-
-<h2>SDP</h2>
-
-<h3>Offer</h3>
-<pre id="offer-sdp"></pre>
-
-<h3>Answer</h3>
-<pre id="answer-sdp"></pre>
 
 <script src="client.js"></script>
 </body>
